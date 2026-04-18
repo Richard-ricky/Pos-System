@@ -1,19 +1,21 @@
+// components/auth/LoginScreen.tsx
 import { useState } from 'react';
-import { Wallet, Lock, Mail, AlertCircle, UserPlus } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Alert, AlertDescription } from '../ui/alert';
+import { useNavigate, useLocation } from 'react-router';
+import { Lock, Mail, Eye, EyeOff, ArrowRight, UserPlus, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { signUp } from '../../utils/api';
 
 export function LoginScreen() {
   const { signIn } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/wallet';
+
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -23,186 +25,183 @@ export function LoginScreen() {
     setError('');
     setSuccess('');
     setIsLoading(true);
-
     try {
       if (mode === 'signup') {
         await signUp(email, password, name, 'cashier');
-        setSuccess('Account created! Please sign in.');
+        setSuccess('Account created! You can now sign in.');
         setMode('login');
         setPassword('');
+        setName('');
       } else {
         await signIn(email, password);
+        navigate(from, { replace: true });
       }
-    } catch (err: any) {
-      setError(err.message || `Failed to ${mode === 'login' ? 'sign in' : 'sign up'}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : `Failed to ${mode === 'login' ? 'sign in' : 'sign up'}`);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4">
-      {/* Background gradient effect */}
-      <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 via-black to-pink-900/20" />
-      
-      <Card className="w-full max-w-md bg-black border-gray-800 shadow-2xl shadow-purple-500/10 relative z-10">
-        <CardHeader className="text-center space-y-4 pb-8">
-          <div className="flex justify-center mb-2">
-            <div className="size-20 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center shadow-lg shadow-purple-500/50">
-              <Wallet className="size-10 text-white" />
-            </div>
+    <div className="min-h-screen bg-[#0A0C10] flex items-center justify-center p-4">
+      {/* Glass card – matches dashboard panel style */}
+      <div className="w-full max-w-md bg-[#0F1117]/80 backdrop-blur-xl border border-[#1E2128] rounded-2xl shadow-2xl p-8">
+        {/* Logo – similar to dashboard sidebar icon */}
+        <div className="flex justify-center mb-6">
+          <div className="bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl p-2.5 shadow-md">
+            <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M20 12V22H4V12M22 7H2v5h20V7zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
+            </svg>
           </div>
-          <div>
-            <CardTitle className="text-3xl font-bold text-white mb-2">
-              FinTech Wallet
-            </CardTitle>
-            <p className="text-gray-400 text-sm">
-              {mode === 'login' ? 'Sign in to your account' : 'Create a new account'}
-            </p>
+        </div>
+
+        <h2 className="text-center text-2xl font-bold text-white tracking-tight">
+          {mode === 'login' ? 'Welcome back' : 'Create account'}
+        </h2>
+        <p className="text-center text-gray-400 text-sm mt-1 mb-6">
+          {mode === 'login'
+            ? 'Sign in to access your dashboard'
+            : 'Join thousands of merchants on PayFlow'}
+        </p>
+
+        {/* Toggle – matches dashboard tab style */}
+        <div className="flex gap-1 bg-[#1A1D24] rounded-lg p-1 mb-6">
+          {(['login', 'signup'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => { setMode(m); setError(''); setSuccess(''); }}
+              className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
+                mode === m
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-sm'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              {m === 'login' ? 'Sign In' : 'Sign Up'}
+            </button>
+          ))}
+        </div>
+
+        {/* Alerts */}
+        {error && (
+          <div className="flex items-start gap-2 p-3 mb-4 rounded-lg bg-red-500/10 border border-red-500/20">
+            <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+            <p className="text-red-400 text-sm">{error}</p>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <Alert className="bg-red-950/50 border-red-800/50 backdrop-blur-sm">
-                <AlertCircle className="size-4 text-red-400" />
-                <AlertDescription className="text-red-300">
-                  {error}
-                </AlertDescription>
-              </Alert>
-            )}
+        )}
+        {success && (
+          <div className="flex items-start gap-2 p-3 mb-4 rounded-lg bg-green-500/10 border border-green-500/20">
+            <CheckCircle2 className="w-4 h-4 text-green-400 mt-0.5 shrink-0" />
+            <p className="text-green-400 text-sm">{success}</p>
+          </div>
+        )}
 
-            {success && (
-              <Alert className="bg-green-950/50 border-green-800/50 backdrop-blur-sm">
-                <AlertCircle className="size-4 text-green-400" />
-                <AlertDescription className="text-green-300">
-                  {success}
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {mode === 'signup' && (
-              <div className="space-y-2">
-                <Label htmlFor="name" className="text-gray-300 text-sm font-medium">
-                  Full Name
-                </Label>
-                <Input
-                  id="name"
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'signup' && (
+            <div>
+              <label className="block text-gray-300 text-xs font-medium mb-1">Full Name</label>
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+                <input
                   type="text"
-                  placeholder="Enter your full name"
+                  placeholder="John Doe"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="bg-gray-950 border-gray-800 text-white placeholder:text-gray-600 focus:border-purple-500 focus:ring-purple-500/20"
                   required
-                />
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-gray-300 text-sm font-medium">
-                Email Address
-              </Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 bg-gray-950 border-gray-800 text-white placeholder:text-gray-600 focus:border-purple-500 focus:ring-purple-500/20"
-                  required
-                  autoComplete="email"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-lg bg-[#1A1D24] border border-[#2A2E38] text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition"
                 />
               </div>
             </div>
+          )}
 
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-gray-300 text-sm font-medium">
-                Password
-              </Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-500" />
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 bg-gray-950 border-gray-800 text-white placeholder:text-gray-600 focus:border-purple-500 focus:ring-purple-500/20"
-                  required
-                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                  minLength={6}
-                />
-              </div>
-              {mode === 'signup' && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Minimum 6 characters
-                </p>
-              )}
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-6 shadow-lg shadow-purple-500/25 transition-all hover:shadow-purple-500/40"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  {mode === 'login' ? 'Signing in...' : 'Creating account...'}
-                </div>
-              ) : (
-                <>
-                  {mode === 'login' ? (
-                    <>
-                      <Lock className="size-4 mr-2" />
-                      Sign In
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="size-4 mr-2" />
-                      Create Account
-                    </>
-                  )}
-                </>
-              )}
-            </Button>
-          </form>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-800" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-black px-2 text-gray-500">Or</span>
+          <div>
+            <label className="block text-gray-300 text-xs font-medium mb-1">Email Address</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input
+                type="email"
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                className="w-full pl-10 pr-3 py-2.5 rounded-lg bg-[#1A1D24] border border-[#2A2E38] text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition"
+              />
             </div>
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full border-gray-800 text-gray-300 hover:bg-gray-950 hover:text-white"
-            onClick={() => {
-              setMode(mode === 'login' ? 'signup' : 'login');
-              setError('');
-              setSuccess('');
-            }}
+          <div>
+            <label className="block text-gray-300 text-xs font-medium mb-1">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-[#1A1D24] border border-[#2A2E38] text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {mode === 'signup' && (
+              <p className="text-gray-500 text-xs mt-1">Minimum 6 characters</p>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 text-white font-medium shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
           >
-            {mode === 'login' ? (
+            {isLoading ? (
               <>
-                <UserPlus className="size-4 mr-2" />
-                Create New Account
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                {mode === 'login' ? 'Signing in...' : 'Creating account...'}
+              </>
+            ) : mode === 'login' ? (
+              <>
+                <span>Sign In</span>
+                <ArrowRight className="w-4 h-4" />
               </>
             ) : (
               <>
-                <Lock className="size-4 mr-2" />
-                Already have an account? Sign In
+                <UserPlus className="w-4 h-4" />
+                <span>Create Account</span>
               </>
             )}
-          </Button>
-        </CardContent>
-      </Card>
+          </button>
+        </form>
+
+        {/* Toggle link */}
+        <p className="text-center text-gray-400 text-sm mt-6">
+          {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+          <button
+            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setSuccess(''); }}
+            className="text-blue-400 hover:text-blue-300 transition"
+          >
+            {mode === 'login' ? 'Sign up free' : 'Sign in'}
+          </button>
+        </p>
+
+        {/* Footer badges – matches dashboard subtle style */}
+        <div className="flex justify-center gap-4 mt-6 pt-4 border-t border-[#1E2128] text-gray-500 text-xs">
+          <span>Supabase Auth</span>
+          <span>Paystack</span>
+          <span>256-bit SSL</span>
+        </div>
+      </div>
     </div>
   );
 }

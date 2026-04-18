@@ -1,5 +1,7 @@
-import { createBrowserRouter } from "react-router";
+import { createBrowserRouter, Navigate } from "react-router";
 import { MainLayout } from "./components/layouts/MainLayout";
+import { LoginScreen } from "./components/auth/LoginScreen";
+import { AuthGuard } from "./components/auth/authguard";
 import { WalletDashboard } from "./components/wallet/WalletDashboard";
 import { POSScreen } from "./components/pos/POSScreen";
 import { TransactionsScreen } from "./components/transactions/TransactionsScreen";
@@ -13,36 +15,69 @@ import { ProductsScreen } from "./components/product/productsscreen";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 
-// Wraps the entire route tree with the providers so that MainLayout
-// and all child routes can access AuthContext and ThemeContext normally.
-// RouterProvider creates its own React tree, so providers must live
-// inside the router — not above RouterProvider in App.tsx.
-function ProvidersLayout() {
+/**
+ * Wraps every route with ThemeProvider + AuthProvider.
+ * Must live INSIDE the router so that useNavigate (used in AuthContext)
+ * works correctly.
+ */
+function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <MainLayout />
-      </AuthProvider>
+      <AuthProvider>{children}</AuthProvider>
     </ThemeProvider>
   );
 }
 
+/**
+ * Protected shell — AuthGuard checks session, then renders MainLayout.
+ */
+function ProtectedShell() {
+  return (
+    <Providers>
+      <AuthGuard>
+        <MainLayout />
+      </AuthGuard>
+    </Providers>
+  );
+}
+
+/**
+ * Public shell — just wraps with providers (no guard needed for login).
+ */
+function PublicShell({ children }: { children: React.ReactNode }) {
+  return <Providers>{children}</Providers>;
+}
+
 export const router = createBrowserRouter([
+  // ── Login (public) ────────────────────────────────────────────────
+  {
+    path: "/login",
+    element: (
+      <PublicShell>
+        <LoginScreen />
+      </PublicShell>
+    ),
+  },
+
+  // ── Protected app routes ──────────────────────────────────────────
   {
     path: "/",
-    Component: ProvidersLayout,
+    Component: ProtectedShell,
     children: [
-      { index: true, Component: WalletDashboard },
-      { path: "wallet", Component: WalletDashboard },
-      { path: "pos", Component: POSScreen },
-      { path: "transactions", Component: TransactionsScreen },
-      { path: "accounts", Component: LinkedAccountsScreen },
-      { path: "send-money", Component: SendMoneyScreen },
-      { path: "add-money", Component: AddMoneyScreen },
-      { path: "link-card", Component: LinkCardScreen },
-      { path: "link-momo", Component: LinkMobileMoneyScreen },
-      { path: "analytics", Component: AnalyticsScreen },
-      { path: "products", Component: ProductsScreen },
+      { index: true,              element: <Navigate to="/wallet" replace /> },
+      { path: "wallet",           Component: WalletDashboard },
+      { path: "pos",              Component: POSScreen },
+      { path: "products",         Component: ProductsScreen },
+      { path: "transactions",     Component: TransactionsScreen },
+      { path: "accounts",         Component: LinkedAccountsScreen },
+      { path: "send-money",       Component: SendMoneyScreen },
+      { path: "add-money",        Component: AddMoneyScreen },
+      { path: "link-card",        Component: LinkCardScreen },
+      { path: "link-momo",        Component: LinkMobileMoneyScreen },
+      { path: "analytics",        Component: AnalyticsScreen },
     ],
   },
+
+  // ── Catch-all ─────────────────────────────────────────────────────
+  { path: "*", element: <Navigate to="/wallet" replace /> },
 ]);
