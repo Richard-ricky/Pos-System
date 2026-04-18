@@ -14,7 +14,26 @@ export interface SMSMessage {
   error?: string;
 }
 
-// Resolves the current session token from the shared Supabase client
+// ─── Helper ───────────────────────────────────────────────────────────────────
+// db.getByPrefix may return raw stored values OR { key, value } pairs.
+function extractSMSMessages(raw: unknown[]): SMSMessage[] {
+  return raw
+    .map((item) => {
+      if (item && typeof item === 'object') {
+        if ('value' in item && item.value && typeof item.value === 'object') {
+          return item.value as SMSMessage;
+        }
+        if ('id' in item && 'to' in item) {
+          return item as SMSMessage;
+        }
+      }
+      return null;
+    })
+    .filter((m): m is SMSMessage => m !== null);
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
 const getAuthHeaders = async (): Promise<Record<string, string>> => {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error('No active session');
@@ -25,8 +44,10 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
   };
 };
 
+// ─── Service ──────────────────────────────────────────────────────────────────
+
 class SMSService {
-  // Send SMS via backend API
+
   async sendSMS(to: string, message: string, userId?: string): Promise<SMSMessage> {
     const smsMessage: SMSMessage = {
       id: `sms_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -36,44 +57,37 @@ class SMSService {
       timestamp: Date.now(),
     };
 
-    try {
-      await db.set(`sms:${smsMessage.id}`, smsMessage);
+    // Persist pending record before the network call so we never lose the ID
+    await db.set(`sms:${smsMessage.id}`, smsMessage);
 
+    try {
       const response = await fetch(`${API_BASE_URL}/sms`, {
         method: 'POST',
-        headers: await getAuthHeaders(), // ← fixed: auth header added
-        body: JSON.stringify({
-          to,
-          message,
-          messageId: smsMessage.id,
-        }),
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ to, message, messageId: smsMessage.id }),
       });
 
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to send SMS');
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send SMS');
-      }
+      const sent: SMSMessage = { ...smsMessage, status: 'sent', provider: data.provider };
+      await db.set(`sms:${sent.id}`, sent);
+      if (userId) await db.set(`user_sms:${userId}:${sent.id}`, sent);
 
-      smsMessage.status = 'sent';
-      smsMessage.provider = data.provider;
-      await db.set(`sms:${smsMessage.id}`, smsMessage);
-
-      if (userId) {
-        await db.set(`user_sms:${userId}:${smsMessage.id}`, smsMessage);
-      }
-
-      return smsMessage;
+      return sent;
     } catch (error) {
-      console.error('Error sending SMS:', error);
-      smsMessage.status = 'failed';
-      smsMessage.error = error instanceof Error ? error.message : 'Unknown error';
-      await db.set(`sms:${smsMessage.id}`, smsMessage);
+      const failed: SMSMessage = {
+        ...smsMessage,
+        status: 'failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+      // Persist failure state — don't mutate the original object
+      await db.set(`sms:${failed.id}`, failed);
+      // Re-throw so the caller (sendNotification) knows it failed
       throw error;
     }
   }
 
-  // Send transaction notification
   async sendTransactionSMS(
     phoneNumber: string,
     amount: number,
@@ -86,13 +100,11 @@ class SMSService {
     await this.sendSMS(phoneNumber, message);
   }
 
-  // Send OTP
   async sendOTP(phoneNumber: string, otp: string): Promise<void> {
     const message = `Your verification code is: ${otp}. This code expires in 10 minutes. Do not share this code with anyone.`;
     await this.sendSMS(phoneNumber, message);
   }
 
-  // Send payment confirmation
   async sendPaymentConfirmation(
     phoneNumber: string,
     amount: number,
@@ -103,56 +115,65 @@ class SMSService {
     await this.sendSMS(phoneNumber, message);
   }
 
-  // Send welcome SMS
   async sendWelcomeSMS(phoneNumber: string, name: string): Promise<void> {
     const message = `Welcome to our fintech platform, ${name}! Your wallet is ready. Start transacting securely today.`;
     await this.sendSMS(phoneNumber, message);
   }
 
-  // Get SMS history for a user
   async getSMSHistory(userId: string): Promise<SMSMessage[]> {
     try {
-      const messages = await db.getByPrefix(`user_sms:${userId}:`);
-      return (messages as SMSMessage[]).sort((a, b) => b.timestamp - a.timestamp);
+      const raw = await db.getByPrefix(`user_sms:${userId}:`);
+      return extractSMSMessages(raw).sort((a, b) => b.timestamp - a.timestamp);
     } catch (error) {
       console.error('Error fetching SMS history:', error);
       return [];
     }
   }
 
-  // Get SMS by ID
   async getSMS(smsId: string): Promise<SMSMessage | null> {
     try {
-      return await db.get(`sms:${smsId}`) as SMSMessage | null;
+      const raw = await db.get(`sms:${smsId}`);
+      if (!raw || typeof raw !== 'object') return null;
+      // Normalise { key, value } or direct shape
+      if ('value' in raw && raw.value && typeof raw.value === 'object') {
+        return raw.value as SMSMessage;
+      }
+      if ('id' in raw) return raw as SMSMessage;
+      return null;
     } catch (error) {
       console.error('Error fetching SMS:', error);
       return null;
     }
   }
 
-  // Update SMS status (for delivery callbacks)
-  async updateSMSStatus(smsId: string, status: SMSMessage['status'], error?: string): Promise<void> {
+  async updateSMSStatus(
+    smsId: string,
+    status: SMSMessage['status'],
+    error?: string,
+  ): Promise<void> {
     try {
       const sms = await this.getSMS(smsId);
-      if (sms) {
-        sms.status = status;
-        if (error) sms.error = error;
-        await db.set(`sms:${smsId}`, sms);
-      }
-    } catch (error) {
-      console.error('Error updating SMS status:', error);
+      if (!sms) return;
+      await db.set(`sms:${smsId}`, {
+        ...sms,
+        status,
+        ...(error ? { error } : {}),
+      });
+    } catch (err) {
+      console.error('Error updating SMS status:', err);
     }
   }
 
-  // Format phone number to E.164 (Ghana)
+  // Format to E.164 for Ghana (+233)
   formatPhoneNumber(phoneNumber: string, countryCode = '+233'): string {
-    let cleaned = phoneNumber.replace(/\D/g, '');
+    const cleaned = phoneNumber.replace(/\D/g, '');
     if (cleaned.startsWith('233')) return `+${cleaned}`;
-    if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+    if (cleaned.startsWith('0')) return `${countryCode}${cleaned.slice(1)}`;
+    // Already stripped (e.g. "244123456")
     return `${countryCode}${cleaned}`;
   }
 
-  // Validate Ghana phone number
+  // Validate Ghana number (02x / 03x / 05x — major networks)
   isValidPhoneNumber(phoneNumber: string): boolean {
     const cleaned = phoneNumber.replace(/\D/g, '');
     return /^(0|233)?[2-5][0-9]{8}$/.test(cleaned);

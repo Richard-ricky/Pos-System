@@ -9,44 +9,64 @@ export interface Notification {
   message: string;
   read: boolean;
   timestamp: number;
-  data?: any;
+  data?: Record<string, unknown>;
 }
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+// db.getByPrefix may return raw stored values OR { key, value } pairs depending
+// on the DB adapter. This normaliser handles both shapes safely.
+function extractNotifications(raw: unknown[]): Notification[] {
+  return raw
+    .map((item) => {
+      if (item && typeof item === 'object') {
+        // { key, value } shape
+        if ('value' in item && item.value && typeof item.value === 'object') {
+          return item.value as Notification;
+        }
+        // Direct stored value shape
+        if ('id' in item && 'userId' in item) {
+          return item as Notification;
+        }
+      }
+      return null;
+    })
+    .filter((n): n is Notification => n !== null);
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
 
 class NotificationService {
   private listeners: Set<(notifications: Notification[]) => void> = new Set();
 
-  // Subscribe to notification changes
   subscribe(callback: (notifications: Notification[]) => void) {
     this.listeners.add(callback);
     return () => this.listeners.delete(callback);
   }
 
-  // Notify all listeners
   private notifyListeners(notifications: Notification[]) {
-    this.listeners.forEach(callback => callback(notifications));
+    this.listeners.forEach((cb) => cb(notifications));
   }
 
-  // Get all notifications for a user
   async getUserNotifications(userId: string): Promise<Notification[]> {
     try {
-      const notifications = await db.getByPrefix(`notification:${userId}:`);
-      return notifications
+      const raw = await db.getByPrefix(`notification:${userId}:`);
+      return extractNotifications(raw)
         .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 50); // Limit to 50 most recent
+        .slice(0, 50);
     } catch (error) {
       console.error('Error fetching notifications:', error);
       return [];
     }
   }
 
-  // Get unread notification count
   async getUnreadCount(userId: string): Promise<number> {
     const notifications = await this.getUserNotifications(userId);
-    return notifications.filter(n => !n.read).length;
+    return notifications.filter((n) => !n.read).length;
   }
 
-  // Create a new notification
-  async createNotification(notification: Omit<Notification, 'id' | 'timestamp'>): Promise<Notification> {
+  async createNotification(
+    notification: Omit<Notification, 'id' | 'timestamp'>,
+  ): Promise<Notification> {
     const newNotification: Notification = {
       ...notification,
       id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -56,38 +76,37 @@ class NotificationService {
     const key = `notification:${notification.userId}:${newNotification.id}`;
     await db.set(key, newNotification);
 
-    // Notify listeners
     const allNotifications = await this.getUserNotifications(notification.userId);
     this.notifyListeners(allNotifications);
-
-    // Send browser notification if permitted
     this.sendBrowserNotification(newNotification);
 
     return newNotification;
   }
 
-  // Mark notification as read
   async markAsRead(userId: string, notificationId: string): Promise<void> {
     const key = `notification:${userId}:${notificationId}`;
-    const notification = await db.get(key);
-    
-    if (notification) {
-      notification.read = true;
-      await db.set(key, notification);
-      
-      const allNotifications = await this.getUserNotifications(userId);
-      this.notifyListeners(allNotifications);
-    }
+    const raw = await db.get(key);
+
+    // Normalise whatever the DB returns
+    const notification = raw && typeof raw === 'object'
+      ? ('value' in raw ? (raw.value as Notification) : (raw as Notification))
+      : null;
+
+    if (!notification) return;
+
+    await db.set(key, { ...notification, read: true });
+
+    const allNotifications = await this.getUserNotifications(userId);
+    this.notifyListeners(allNotifications);
   }
 
-  // Mark all as read
   async markAllAsRead(userId: string): Promise<void> {
     const notifications = await this.getUserNotifications(userId);
     const updates = notifications
-      .filter(n => !n.read)
-      .map(n => ({
+      .filter((n) => !n.read)
+      .map((n) => ({
         key: `notification:${userId}:${n.id}`,
-        value: { ...n, read: true }
+        value: { ...n, read: true },
       }));
 
     if (updates.length > 0) {
@@ -97,74 +116,63 @@ class NotificationService {
     }
   }
 
-  // Delete notification
   async deleteNotification(userId: string, notificationId: string): Promise<void> {
     const key = `notification:${userId}:${notificationId}`;
     await db.delete(key);
-    
+
     const allNotifications = await this.getUserNotifications(userId);
     this.notifyListeners(allNotifications);
   }
 
-  // Delete all notifications
   async deleteAllNotifications(userId: string): Promise<void> {
     const notifications = await this.getUserNotifications(userId);
-    const keys = notifications.map(n => `notification:${userId}:${n.id}`);
-    
+    const keys = notifications.map((n) => `notification:${userId}:${n.id}`);
+
     if (keys.length > 0) {
       await db.batchDelete(keys);
       this.notifyListeners([]);
     }
   }
 
-  // Request browser notification permission
   async requestPermission(): Promise<NotificationPermission> {
-    if (!('Notification' in window)) {
-      console.log('This browser does not support notifications');
-      return 'denied';
-    }
-
-    if (Notification.permission === 'granted') {
-      return 'granted';
-    }
-
+    if (!('Notification' in window)) return 'denied';
+    if (Notification.permission === 'granted') return 'granted';
     if (Notification.permission !== 'denied') {
-      const permission = await Notification.requestPermission();
-      return permission;
+      return Notification.requestPermission();
     }
-
     return Notification.permission;
   }
 
-  // Send browser notification
   private sendBrowserNotification(notification: Notification): void {
-    if (!('Notification' in window) || Notification.permission !== 'granted') {
-      return;
-    }
-
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
     try {
-      const browserNotification = new Notification(notification.title, {
+      const n = new Notification(notification.title, {
         body: notification.message,
         icon: '/icon.png',
         badge: '/badge.png',
         tag: notification.id,
         requireInteraction: false,
       });
-
-      browserNotification.onclick = () => {
-        window.focus();
-        browserNotification.close();
-      };
-
-      // Auto close after 5 seconds
-      setTimeout(() => browserNotification.close(), 5000);
+      n.onclick = () => { window.focus(); n.close(); };
+      setTimeout(() => n.close(), 5000);
     } catch (error) {
       console.error('Error sending browser notification:', error);
     }
   }
 
-  // Realtime subscription using Supabase
-  subscribeToRealtimeNotifications(userId: string, callback: (notification: Notification) => void) {
+  /**
+   * Subscribe to realtime notifications via Supabase.
+   * Returns an unsubscribe function — MUST be called in useEffect cleanup:
+   *
+   *   useEffect(() => {
+   *     const unsub = notificationService.subscribeToRealtimeNotifications(userId, cb);
+   *     return unsub;   // ← cleanup on unmount
+   *   }, [userId]);
+   */
+  subscribeToRealtimeNotifications(
+    userId: string,
+    callback: (notification: Notification) => void,
+  ) {
     const channel = supabase
       .channel(`notifications:${userId}`)
       .on(
@@ -173,20 +181,18 @@ class NotificationService {
           event: 'INSERT',
           schema: 'public',
           table: 'kv_store_45351b4f',
-          filter: `key=like.notification:${userId}:%`
+          filter: `key=like.notification:${userId}:%`,
         },
         (payload) => {
           if (payload.new && 'value' in payload.new) {
             const notification = payload.new.value as Notification;
             callback(notification);
           }
-        }
+        },
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }
 }
 

@@ -10,11 +10,27 @@ import { LinkCardScreen } from "./components/accounts/LinkCardScreen";
 import { LinkMobileMoneyScreen } from "./components/accounts/LinkMobileMoneyScreen";
 import { AnalyticsScreen } from "./components/analytics/AnalyticsScreen";
 import { ProductsScreen } from "./components/product/productsscreen";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import { AuthProvider } from "./contexts/AuthContext";
+
+// Wraps the entire route tree with the providers so that MainLayout
+// and all child routes can access AuthContext and ThemeContext normally.
+// RouterProvider creates its own React tree, so providers must live
+// inside the router — not above RouterProvider in App.tsx.
+function ProvidersLayout() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <MainLayout />
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
 
 export const router = createBrowserRouter([
   {
     path: "/",
-    Component: MainLayout,
+    Component: ProvidersLayout,
     children: [
       { index: true, Component: WalletDashboard },
       { path: "wallet", Component: WalletDashboard },

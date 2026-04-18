@@ -149,6 +149,8 @@
   --ring: oklch(0.439 0 0);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
+  --input-background: #1e1e1e;
+  --switch-background: #3a3a3a;
 
   /* === Charts === */
   --chart-1: oklch(0.488 0.243 264.376);

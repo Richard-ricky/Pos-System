@@ -1,10 +1,12 @@
 import { Outlet, Link, useLocation } from 'react-router';
 import {
   Wallet, ShoppingCart, Receipt, CreditCard,
-  Send, PlusCircle, LogOut, User, BarChart3, Package,
+  Send, PlusCircle, LogOut, BarChart3, Package,
+  Sun, Moon,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { NotificationCenter } from '../notifications/NotificationCenter';
 import {
   DropdownMenu,
@@ -31,6 +33,7 @@ const NAV_LINKS = [
 export function MainLayout() {
   const location = useLocation();
   const { user, signOut } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   const isActive = (path: string) => {
     if (path === '/wallet') return location.pathname === '/' || location.pathname === '/wallet';
@@ -80,7 +83,7 @@ export function MainLayout() {
               </Link>
             </Button>
 
-            {/* Mobile: icon-only add/send */}
+            {/* Mobile: icon-only */}
             <Button asChild size="icon" variant="ghost" className="sm:hidden">
               <Link to="/add-money"><PlusCircle className="size-4" /></Link>
             </Button>
@@ -90,7 +93,7 @@ export function MainLayout() {
 
             <NotificationCenter />
 
-            {/* User menu */}
+            {/* ── User menu ── */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="gap-2 pl-1 pr-2">
@@ -103,18 +106,47 @@ export function MainLayout() {
                   </div>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-card border-border w-52">
-                <DropdownMenuLabel className="text-muted-foreground font-normal text-xs truncate">
-                  {user?.email}
+
+              <DropdownMenuContent align="end" className="w-56">
+
+                {/* User info */}
+                <DropdownMenuLabel className="pb-2">
+                  <p className="text-sm font-medium text-foreground leading-none">{user?.name}</p>
+                  <p className="text-xs text-muted-foreground truncate mt-1">{user?.email}</p>
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-border" />
+
+                <DropdownMenuSeparator />
+
+                {/* Theme toggle */}
                 <DropdownMenuItem
-                  onClick={signOut}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10 cursor-pointer gap-2"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    toggleTheme();
+                  }}
+                  className="cursor-pointer gap-2"
                 >
-                  <LogOut className="size-4" />
-                  Sign out
+                  {theme === 'dark' ? (
+                    <Sun className="size-4 text-amber-500 shrink-0" />
+                  ) : (
+                    <Moon className="size-4 text-indigo-400 shrink-0" />
+                  )}
+                  <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+                  <span className="ml-auto text-xs text-muted-foreground capitalize bg-muted px-1.5 py-0.5 rounded-md">
+                    {theme}
+                  </span>
                 </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
+                {/* Sign out */}
+                <DropdownMenuItem
+                  onSelect={() => signOut()}
+                  className="cursor-pointer gap-2 text-destructive focus:text-destructive focus:bg-destructive/10"
+                >
+                  <LogOut className="size-4 shrink-0" />
+                  <span>Sign out</span>
+                </DropdownMenuItem>
+
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
