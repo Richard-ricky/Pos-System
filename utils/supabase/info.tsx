@@ -1,0 +1,2 @@
+export const projectId = "jdotmashjqtadgdtudaj"
+export const publicAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impkb3RtYXNoanF0YWRnZHR1ZGFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyOTQ5OTIsImV4cCI6MjA5MDg3MDk5Mn0.g-fsB8vesVunEjwI2gHyDV73eCqEU9HLXAT6-qbJUL4"
