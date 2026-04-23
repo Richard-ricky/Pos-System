@@ -38,10 +38,7 @@ function ProductSlideshow({ products }: { products: Product[] }) {
     setPrev(current);
     setAnimating(true);
     setCurrent(index);
-    setTimeout(() => {
-      setPrev(null);
-      setAnimating(false);
-    }, 400);
+    setTimeout(() => { setPrev(null); setAnimating(false); }, 400);
   }, [animating, current]);
 
   const goNext = useCallback(() => {
@@ -64,38 +61,34 @@ function ProductSlideshow({ products }: { products: Product[] }) {
   const prevProduct = prev !== null ? products[prev] : null;
   const outOfStock = product.stock <= 0;
 
-  // Slide-in/out animation classes
-  const enterClass = direction === 'right'
-    ? 'translate-x-full'
-    : '-translate-x-full';
-
   return (
     <div
       className="space-y-2"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Our Products</h2>
           <p className="text-xs text-muted-foreground">{products.length} products available</p>
         </div>
         <Link
-          to="/pos"
+          to="/app/pos"
           className="text-xs font-medium text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
         >
           Shop now <ArrowUpRight className="size-3" />
         </Link>
       </div>
 
-      {/* Slideshow frame */}
-      <Link to="/pos" className="block relative rounded-2xl overflow-hidden border border-border bg-surface-3 shadow-sm" style={{ height: 240 }}>
-
+      <Link
+        to="/app/pos"
+        className="block relative rounded-2xl overflow-hidden border border-border bg-surface-3 shadow-sm"
+        style={{ height: 240 }}
+      >
         {/* Previous slide (exit) */}
         {prevProduct && animating && (
           <div
-            className="absolute inset-0 transition-transform duration-400 ease-in-out"
+            className="absolute inset-0"
             style={{
               transform: direction === 'right' ? 'translateX(-100%)' : 'translateX(100%)',
               transition: 'transform 0.4s ease-in-out',
@@ -113,20 +106,16 @@ function ProductSlideshow({ products }: { products: Product[] }) {
         )}
 
         {/* Current slide (enter) */}
-        <div
-          className="absolute inset-0"
-          style={{
-            transform: animating ? 'translateX(0)' : 'translateX(0)',
-            animation: animating ? `slideIn${direction === 'right' ? 'Right' : 'Left'} 0.4s ease-in-out forwards` : 'none',
-          }}
-        >
+        <div className="absolute inset-0">
           {product.image ? (
             <img
               src={product.image}
               alt={product.name}
               className="w-full h-full object-cover"
               style={{
-                transform: animating ? `translateX(${direction === 'right' ? '100%' : '-100%'})` : 'translateX(0)',
+                transform: animating
+                  ? `translateX(${direction === 'right' ? '100%' : '-100%'})`
+                  : 'translateX(0)',
                 transition: 'transform 0.4s ease-in-out',
               }}
             />
@@ -158,28 +147,20 @@ function ProductSlideshow({ products }: { products: Product[] }) {
 
         {/* Bottom info */}
         <div className="absolute bottom-0 left-0 right-0 p-4 pointer-events-none">
-          {/* Dots */}
           {products.length > 1 && (
             <div className="flex items-center gap-1.5 mb-3">
               {products.map((_, i) => (
                 <div
                   key={i}
                   className="rounded-full bg-white transition-all duration-300"
-                  style={{
-                    width: i === current ? 20 : 6,
-                    height: 6,
-                    opacity: i === current ? 1 : 0.4,
-                  }}
+                  style={{ width: i === current ? 20 : 6, height: 6, opacity: i === current ? 1 : 0.4 }}
                 />
               ))}
             </div>
           )}
-
           <div className="flex items-end justify-between">
             <div>
-              <p className="text-white font-bold text-lg leading-tight drop-shadow-sm">
-                {product.name}
-              </p>
+              <p className="text-white font-bold text-lg leading-tight drop-shadow-sm">{product.name}</p>
               <p className="text-white/60 text-xs mt-0.5">
                 {outOfStock ? 'Currently unavailable' : `${product.stock} units in stock`}
               </p>
@@ -195,15 +176,15 @@ function ProductSlideshow({ products }: { products: Product[] }) {
           <>
             <button
               onClick={(e) => { e.preventDefault(); goPrev(); }}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 size-8 rounded-full bg-black/30 hover:bg-black/55 backdrop-blur-sm flex items-center justify-center text-white opacity-0 hover:opacity-100 group-hover:opacity-100 transition-opacity"
-              style={{ opacity: paused ? 1 : undefined }}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 size-8 rounded-full bg-black/30 hover:bg-black/55 backdrop-blur-sm flex items-center justify-center text-white transition-opacity"
+              style={{ opacity: paused ? 1 : 0.5 }}
             >
               <ChevronLeft className="size-4" />
             </button>
             <button
               onClick={(e) => { e.preventDefault(); goNext(); }}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 size-8 rounded-full bg-black/30 hover:bg-black/55 backdrop-blur-sm flex items-center justify-center text-white transition-opacity"
-              style={{ opacity: paused ? 1 : 0.6 }}
+              style={{ opacity: paused ? 1 : 0.5 }}
             >
               <ChevronRight className="size-4" />
             </button>
@@ -303,12 +284,10 @@ export function WalletDashboard() {
 
       {/* ── Compact Wallet Card ── */}
       <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-violet-600 via-purple-600 to-pink-500 shadow-lg px-5 py-4">
-        {/* Decorative */}
         <div className="absolute -top-6 -right-6 size-32 rounded-full bg-white/5 pointer-events-none" />
         <div className="absolute -bottom-8 -left-4 size-36 rounded-full bg-white/5 pointer-events-none" />
 
         <div className="relative z-10 flex items-center justify-between gap-4">
-          {/* Balance */}
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 mb-1">
               <p className="text-xs font-medium text-purple-200">Available Balance</p>
@@ -331,24 +310,15 @@ export function WalletDashboard() {
             )}
           </div>
 
-          {/* Actions */}
           <div className="flex flex-col gap-2 shrink-0">
-            <Button
-              asChild
-              size="sm"
-              className="h-8 bg-white text-purple-700 hover:bg-purple-50 text-xs font-semibold px-4 shadow-sm"
-            >
-              <Link to="/add-money">
+            <Button asChild size="sm" className="h-8 bg-white text-purple-700 hover:bg-purple-50 text-xs font-semibold px-4 shadow-sm">
+              <Link to="/app/add-money">
                 <ArrowDownLeft className="size-3.5" />
                 Add Money
               </Link>
             </Button>
-            <Button
-              asChild
-              size="sm"
-              className="h-8 bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold px-4"
-            >
-              <Link to="/send-money">
+            <Button asChild size="sm" className="h-8 bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold px-4">
+              <Link to="/app/send-money">
                 <ArrowUpRight className="size-3.5" />
                 Send Money
               </Link>
@@ -359,7 +329,7 @@ export function WalletDashboard() {
 
       {/* ── Linked Accounts ── */}
       <div className="grid grid-cols-2 gap-3">
-        <Link to="/accounts" className="group">
+        <Link to="/app/accounts" className="group">
           <Card className="border-border bg-card hover:border-primary/30 hover:shadow-sm transition-all duration-200">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="size-9 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
@@ -374,7 +344,7 @@ export function WalletDashboard() {
           </Card>
         </Link>
 
-        <Link to="/accounts" className="group">
+        <Link to="/app/accounts" className="group">
           <Card className="border-border bg-card hover:border-primary/30 hover:shadow-sm transition-all duration-200">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="size-9 rounded-xl bg-green-500/10 flex items-center justify-center shrink-0">
@@ -399,7 +369,7 @@ export function WalletDashboard() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-semibold text-foreground">Recent Transactions</CardTitle>
             <Button asChild variant="ghost" size="sm" className="text-primary hover:text-primary/80 h-7 text-xs -mr-1">
-              <Link to="/transactions">View All</Link>
+              <Link to="/app/transactions">View All</Link>
             </Button>
           </div>
         </CardHeader>

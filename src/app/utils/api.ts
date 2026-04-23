@@ -1,56 +1,53 @@
 // utils/api.ts
 import { publicAnonKey, projectId } from '../../../utils/supabase/info';
-import { supabase } from '../../../utils/supabase/client'; // ← shared singleton
+import { supabase } from '../../../utils/supabase/client';
 
 const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-45351b4f`;
 
 // ─── Token resolution ─────────────────────────────────────────────────────────
-// Always resolved fresh from the shared Supabase client.
-// No module-level token variable needed — the shared client holds the session.
 
 const resolveToken = async (explicit?: string): Promise<string> => {
   if (explicit) return explicit;
-
   const { data: { session } } = await supabase.auth.getSession();
   if (session?.access_token) return session.access_token;
-
   throw new Error('No active session');
 };
 
 // ─── Header builders ──────────────────────────────────────────────────────────
+// The Supabase edge proxy strips the Authorization header before it reaches
+// your function, and rejects non-anon-key values in the apikey header.
+// The fix: also send the JWT in X-Auth-Token — a custom header the proxy
+// ignores — which your backend's extractToken() already reads as a fallback.
 
 const authHeaders = async (token?: string): Promise<Record<string, string>> => {
   const resolved = await resolveToken(token);
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${resolved}`,
-    'apikey': resolved,          // ← fallback: Supabase never strips this
+    'Authorization': `Bearer ${resolved}`,   // may be stripped by proxy
+    'apikey': publicAnonKey,                  // must be anon key for proxy
+    'X-Auth-Token': resolved,                 // custom header proxy won't touch
   };
 };
 
 const publicHeaders = (): Record<string, string> => ({
   'Content-Type': 'application/json',
   'Authorization': `Bearer ${publicAnonKey}`,
-  'apikey': publicAnonKey,          // ← fallback: Supabase never strips this
+  'apikey': publicAnonKey,
 });
 
-// ─── These are kept for backward-compat but are now no-ops ───────────────────
-// The shared client manages token state; nothing needs to set it manually.
-export const setAuthToken = (_token: string) => { /* no-op: shared client manages this */ };
+// ─── Backward-compat no-ops ───────────────────────────────────────────────────
+
+export const setAuthToken = (_token: string) => {};
 export const getAuthToken = () => null;
-export const clearAuthToken = () => { /* no-op */ };
+export const clearAuthToken = () => {};
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export const signUp = async (
-  email: string,
-  password: string,
-  name: string,
-  role = 'cashier',
+  email: string, password: string, name: string, role = 'cashier',
 ) => {
   const res = await fetch(`${API_BASE_URL}/auth/signup`, {
-    method: 'POST',
-    headers: publicHeaders(),
+    method: 'POST', headers: publicHeaders(),
     body: JSON.stringify({ email, password, name, role }),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Signup failed');
@@ -59,7 +56,6 @@ export const signUp = async (
 
 export const getUserProfile = async (token?: string) => {
   const res = await fetch(`${API_BASE_URL}/auth/profile`, {
-    method: 'GET',
     headers: await authHeaders(token),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch profile');
@@ -76,9 +72,7 @@ export const getProducts = async () => {
 
 export const createProduct = async (productData: Record<string, unknown>) => {
   const res = await fetch(`${API_BASE_URL}/products`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify(productData),
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify(productData),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to create product');
   return res.json();
@@ -86,9 +80,7 @@ export const createProduct = async (productData: Record<string, unknown>) => {
 
 export const updateProduct = async (productId: string, updates: Record<string, unknown>) => {
   const res = await fetch(`${API_BASE_URL}/products/${productId}`, {
-    method: 'PUT',
-    headers: await authHeaders(),
-    body: JSON.stringify(updates),
+    method: 'PUT', headers: await authHeaders(), body: JSON.stringify(updates),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to update product');
   return res.json();
@@ -96,8 +88,7 @@ export const updateProduct = async (productId: string, updates: Record<string, u
 
 export const deleteProduct = async (productId: string) => {
   const res = await fetch(`${API_BASE_URL}/products/${productId}`, {
-    method: 'DELETE',
-    headers: await authHeaders(),
+    method: 'DELETE', headers: await authHeaders(),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to delete product');
   return res.json();
@@ -113,9 +104,7 @@ export const getCustomers = async () => {
 
 export const createCustomer = async (customerData: Record<string, unknown>) => {
   const res = await fetch(`${API_BASE_URL}/customers`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify(customerData),
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify(customerData),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to create customer');
   return res.json();
@@ -123,9 +112,7 @@ export const createCustomer = async (customerData: Record<string, unknown>) => {
 
 export const updateCustomer = async (customerId: string, updates: Record<string, unknown>) => {
   const res = await fetch(`${API_BASE_URL}/customers/${customerId}`, {
-    method: 'PUT',
-    headers: await authHeaders(),
-    body: JSON.stringify(updates),
+    method: 'PUT', headers: await authHeaders(), body: JSON.stringify(updates),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to update customer');
   return res.json();
@@ -135,12 +122,12 @@ export const updateCustomer = async (customerId: string, updates: Record<string,
 
 export const createTransaction = async (transactionData: Record<string, unknown>) => {
   const res = await fetch(`${API_BASE_URL}/transactions`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify(transactionData),
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify(transactionData),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to create transaction');
   return res.json();
+  // Backend automatically deducts wallet balance when method==='wallet'
+  // and type is 'send', 'pos', or 'transfer'
 };
 
 export const getTransactions = async () => {
@@ -165,9 +152,7 @@ export const getAnalytics = async () => {
 
 export const generateReceipt = async (transactionId: string) => {
   const res = await fetch(`${API_BASE_URL}/receipts/generate`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify({ transactionId }),
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ transactionId }),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to generate receipt');
   return res.json();
@@ -177,22 +162,17 @@ export const generateReceipt = async (transactionId: string) => {
 
 export const verifyPayment = async (reference: string) => {
   const res = await fetch(`${API_BASE_URL}/payments/verify`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify({ reference }),
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify({ reference }),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Payment verification failed');
   return res.json();
 };
 
 export const initializePayment = async (
-  amount: number,
-  email: string,
-  metadata: Record<string, unknown>,
+  amount: number, email: string, metadata: Record<string, unknown>,
 ) => {
   const res = await fetch(`${API_BASE_URL}/payments/initialize`, {
-    method: 'POST',
-    headers: await authHeaders(),
+    method: 'POST', headers: await authHeaders(),
     body: JSON.stringify({ amount, email, metadata }),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Payment initialization failed');
@@ -201,19 +181,27 @@ export const initializePayment = async (
 
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
+export const getWalletBalance = async () => {
+  const res = await fetch(`${API_BASE_URL}/wallet/balance`, { headers: await authHeaders() });
+  if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch wallet balance');
+  return res.json();
+};
+
 export const fundWallet = async (amount: number, reference: string, method: string) => {
   const res = await fetch(`${API_BASE_URL}/wallet/fund`, {
-    method: 'POST',
-    headers: await authHeaders(),
+    method: 'POST', headers: await authHeaders(),
     body: JSON.stringify({ amount, reference, method }),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Wallet funding failed');
   return res.json();
 };
 
-export const getWalletBalance = async () => {
-  const res = await fetch(`${API_BASE_URL}/wallet/balance`, { headers: await authHeaders() });
-  if (!res.ok) throw new Error((await res.json()).error || 'Failed to fetch wallet balance');
+export const deductWallet = async (amount: number, description = 'Wallet deduction') => {
+  const res = await fetch(`${API_BASE_URL}/wallet/deduct`, {
+    method: 'POST', headers: await authHeaders(),
+    body: JSON.stringify({ amount, description }),
+  });
+  if (!res.ok) throw new Error((await res.json()).error || 'Wallet deduction failed');
   return res.json();
 };
 
@@ -221,9 +209,7 @@ export const getWalletBalance = async () => {
 
 export const linkCard = async (cardData: Record<string, unknown>) => {
   const res = await fetch(`${API_BASE_URL}/accounts/link-card`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify(cardData),
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify(cardData),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to link card');
   return res.json();
@@ -237,9 +223,7 @@ export const getLinkedCards = async () => {
 
 export const linkMobileMoney = async (momoData: Record<string, unknown>) => {
   const res = await fetch(`${API_BASE_URL}/accounts/link-momo`, {
-    method: 'POST',
-    headers: await authHeaders(),
-    body: JSON.stringify(momoData),
+    method: 'POST', headers: await authHeaders(), body: JSON.stringify(momoData),
   });
   if (!res.ok) throw new Error((await res.json()).error || 'Failed to link mobile money');
   return res.json();

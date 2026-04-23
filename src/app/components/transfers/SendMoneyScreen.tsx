@@ -11,35 +11,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import * as api from '../../utils/api';
 import { paystackService } from '../../services/paystack';
 import { useAuth } from '../../contexts/AuthContext';
-import { LinkedCard, PaymentMethod } from '../../types';
+import { LinkedCard } from '../../types';
 import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type RecipientType = 'momo' | 'bank' | 'card';
 type TransferStep = 'details' | 'confirm' | 'processing' | 'success' | 'failed';
+type FundingSource = 'wallet' | 'paystack_card' | 'paystack_momo';
 
 // ─── Recipient type selector ──────────────────────────────────────────────────
 
 const RECIPIENT_TYPES: { value: RecipientType; label: string; sub: string; icon: React.ReactNode }[] = [
-  {
-    value: 'momo',
-    label: 'Mobile Money',
-    sub: 'MTN, Vodafone, AirtelTigo',
-    icon: <Smartphone className="size-5" />,
-  },
-  {
-    value: 'bank',
-    label: 'Bank Transfer',
-    sub: 'GCB, Ecobank, Stanbic & more',
-    icon: <Building2 className="size-5" />,
-  },
-  {
-    value: 'card',
-    label: 'Card Transfer',
-    sub: 'Visa / Mastercard',
-    icon: <CreditCard className="size-5" />,
-  },
+  { value: 'momo',  label: 'Mobile Money',  sub: 'MTN, Vodafone, AirtelTigo',    icon: <Smartphone className="size-5" /> },
+  { value: 'bank',  label: 'Bank Transfer', sub: 'GCB, Ecobank, Stanbic & more', icon: <Building2 className="size-5" /> },
+  { value: 'card',  label: 'Card Transfer', sub: 'Visa / Mastercard',            icon: <CreditCard className="size-5" /> },
 ];
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
@@ -93,7 +79,7 @@ export function SendMoneyScreen() {
     recipientAccountNumber: '',
     recipientBankName: '',
     recipientName: '',
-    fundingSource: 'wallet' as PaymentMethod,
+    fundingSource: 'wallet' as FundingSource,
     selectedCardId: '',
   });
 
@@ -109,9 +95,7 @@ export function SendMoneyScreen() {
           api.getWalletBalance(),
           api.getLinkedCards(),
         ]);
-        setWalletBalance(
-          walletRes?.wallet?.balance ?? walletRes?.balance ?? 0,
-        );
+        setWalletBalance(walletRes?.wallet?.balance ?? walletRes?.balance ?? 0);
         setLinkedCards(
           Array.isArray(cardsRes?.cards) ? cardsRes.cards
           : Array.isArray(cardsRes?.data) ? cardsRes.data
@@ -125,6 +109,14 @@ export function SendMoneyScreen() {
     };
     load();
   }, []);
+
+  // Refresh wallet balance from server
+  const refreshBalance = async () => {
+    try {
+      const walletRes = await api.getWalletBalance();
+      setWalletBalance(walletRes?.wallet?.balance ?? walletRes?.balance ?? 0);
+    } catch {}
+  };
 
   // ── Validation ─────────────────────────────────────────────────────────────
 
@@ -158,34 +150,51 @@ export function SendMoneyScreen() {
 
     try {
       if (formData.fundingSource === 'wallet') {
-        // Wallet path: safe to set processing before API call (no popup involved)
         setStep('processing');
+
+        // 1. Record the transaction
         await api.createTransaction({
-          type: 'send', amount, status: 'success', method: 'wallet',
+          type: 'send',
+          amount,
+          status: 'success',
+          method: 'wallet',
           description: `Transfer to ${formData.recipientName}`,
-          recipient, recipientType,
+          recipient,
+          recipientType,
           recipientNetwork: formData.recipientNetwork || undefined,
         });
+
+        // Backend automatically deducts from wallet when method === 'wallet'
+        // and type === 'send'. Refresh balance to show updated amount.
+        await refreshBalance();
+
         setStep('success');
+
       } else {
-        // Paystack path: DO NOT call setStep or setState before initializePayment.
-        // Any React re-render before the popup opens breaks the browser's user-gesture
-        // chain and Paystack silently refuses to open the iframe.
+        // Paystack path — do NOT setState before popup opens
+        const channels: string[] = formData.fundingSource === 'paystack_card'
+          ? ['card']
+          : ['mobile_money'];
+
         await new Promise<void>((resolve, reject) => {
           paystackService.initializePayment({
             email: user.email,
             amount,
             metadata: { userId: user.id, type: 'send_money', recipient, recipientType },
-            channels: formData.fundingSource === 'card' ? ['card'] : ['mobile_money'],
+            channels,
             onSuccess: async (reference) => {
-              // Only show processing AFTER popup closes successfully
               setStep('processing');
               try {
                 await api.verifyPayment(reference);
                 await api.createTransaction({
-                  type: 'send', amount, status: 'success', method: formData.fundingSource,
+                  type: 'send',
+                  amount,
+                  status: 'success',
+                  method: formData.fundingSource,
                   description: `Transfer to ${formData.recipientName}`,
-                  recipient, reference, recipientType,
+                  recipient,
+                  reference,
+                  recipientType,
                   recipientNetwork: formData.recipientNetwork || undefined,
                 });
                 resolve();
@@ -195,6 +204,7 @@ export function SendMoneyScreen() {
             onClose: () => reject(new Error('Payment cancelled')),
           });
         });
+
         setStep('success');
       }
     } catch (err: unknown) {
@@ -212,6 +222,16 @@ export function SendMoneyScreen() {
   const fmtAmount = (v: string) => {
     const n = parseFloat(v);
     return isNaN(n) ? '0.00' : n.toFixed(2);
+  };
+
+  const resetForm = () => {
+    setFormData({
+      amount: '', recipientPhone: '', recipientNetwork: '',
+      recipientCardNumber: '', recipientAccountNumber: '',
+      recipientBankName: '', recipientName: '',
+      fundingSource: 'wallet', selectedCardId: '',
+    });
+    setStep('details');
   };
 
   // ─── Full-screen states ────────────────────────────────────────────────────
@@ -246,10 +266,10 @@ export function SendMoneyScreen() {
             </p>
           </div>
           <div className="pt-2 flex gap-3 justify-center">
-            <Button variant="outline" onClick={() => { setStep('details'); setFormData({ amount: '', recipientPhone: '', recipientNetwork: '', recipientCardNumber: '', recipientAccountNumber: '', recipientBankName: '', recipientName: '', fundingSource: 'wallet', selectedCardId: '' }); }} className="border-border">
+            <Button variant="outline" onClick={resetForm} className="border-border">
               Send again
             </Button>
-            <Button onClick={() => navigate('/wallet')}>
+            <Button onClick={() => navigate('/app/wallet')}>
               Done
             </Button>
           </div>
@@ -272,12 +292,10 @@ export function SendMoneyScreen() {
             </p>
           </div>
           <div className="pt-2 flex gap-3 justify-center">
-            <Button variant="outline" onClick={() => navigate('/wallet')} className="border-border">
+            <Button variant="outline" onClick={() => navigate('/app/wallet')} className="border-border">
               Cancel
             </Button>
-            <Button onClick={() => setStep('details')}>
-              Try again
-            </Button>
+            <Button onClick={() => setStep('details')}>Try again</Button>
           </div>
         </div>
       </div>
@@ -289,16 +307,14 @@ export function SendMoneyScreen() {
   return (
     <div className="max-w-2xl mx-auto space-y-4">
 
-      {/* Back button */}
       <button
-        onClick={() => step === 'confirm' ? setStep('details') : navigate('/wallet')}
+        onClick={() => step === 'confirm' ? setStep('details') : navigate('/app/wallet')}
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="size-4" />
         {step === 'confirm' ? 'Back to details' : 'Back to Wallet'}
       </button>
 
-      {/* Page title */}
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Send Money</h1>
         <p className="text-sm text-muted-foreground">Transfer funds quickly and securely</p>
@@ -308,7 +324,6 @@ export function SendMoneyScreen() {
 
       {step === 'details' ? (
         <div className="space-y-4">
-
           {loadingData ? (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -318,9 +333,7 @@ export function SendMoneyScreen() {
               {/* ── Transfer type ── */}
               <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
                 <div className="px-4 py-3 border-b border-border bg-surface-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Transfer type
-                  </p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Transfer type</p>
                 </div>
                 <div className="divide-y divide-border/60">
                   {RECIPIENT_TYPES.map(({ value, label, sub, icon }) => (
@@ -341,19 +354,12 @@ export function SendMoneyScreen() {
                         {icon}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={[
-                          'text-sm font-medium',
-                          recipientType === value ? 'text-foreground' : 'text-foreground',
-                        ].join(' ')}>
-                          {label}
-                        </p>
+                        <p className="text-sm font-medium text-foreground">{label}</p>
                         <p className="text-xs text-muted-foreground">{sub}</p>
                       </div>
                       <div className={[
                         'size-4 rounded-full border-2 shrink-0 transition-colors',
-                        recipientType === value
-                          ? 'border-primary bg-primary'
-                          : 'border-border',
+                        recipientType === value ? 'border-primary bg-primary' : 'border-border',
                       ].join(' ')} />
                     </button>
                   ))}
@@ -363,9 +369,7 @@ export function SendMoneyScreen() {
               {/* ── Recipient details ── */}
               <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
                 <div className="px-4 py-3 border-b border-border bg-surface-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Recipient details
-                  </p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recipient details</p>
                 </div>
                 <div className="p-4 space-y-4">
 
@@ -466,9 +470,7 @@ export function SendMoneyScreen() {
               {/* ── Amount & funding ── */}
               <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
                 <div className="px-4 py-3 border-b border-border bg-surface-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Amount & payment
-                  </p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Amount & payment</p>
                 </div>
                 <div className="p-4 space-y-4">
                   <div className="space-y-1.5">
@@ -494,26 +496,41 @@ export function SendMoneyScreen() {
                     <Label>Pay from</Label>
                     <Select
                       value={formData.fundingSource}
-                      onValueChange={(v: PaymentMethod) => update({ fundingSource: v })}
+                      onValueChange={(v: FundingSource) => update({ fundingSource: v })}
                     >
                       <SelectTrigger className="bg-input-background border-border">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="bg-card border-border">
+                        {/* Wallet option */}
                         <SelectItem value="wallet">
                           <div className="flex items-center gap-2">
                             <Wallet className="size-3.5 text-muted-foreground" />
                             Wallet — GHS {walletBalance.toFixed(2)}
                           </div>
                         </SelectItem>
+                        {/* Saved cards — each gets a unique value using its id */}
                         {linkedCards.map((card) => (
-                          <SelectItem key={card.id} value="card">
+                          <SelectItem key={card.id} value={`card_${card.id}`}>
                             <div className="flex items-center gap-2">
                               <CreditCard className="size-3.5 text-muted-foreground" />
                               •••• {card.cardNumber} — {card.cardholderName}
                             </div>
                           </SelectItem>
                         ))}
+                        {/* One-time Paystack options */}
+                        <SelectItem value="paystack_card">
+                          <div className="flex items-center gap-2">
+                            <CreditCard className="size-3.5 text-muted-foreground" />
+                            Pay with new card (Paystack)
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="paystack_momo">
+                          <div className="flex items-center gap-2">
+                            <Smartphone className="size-3.5 text-muted-foreground" />
+                            Pay with mobile money (Paystack)
+                          </div>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     {formData.fundingSource === 'wallet' && (
@@ -540,22 +557,14 @@ export function SendMoneyScreen() {
         // ── Confirm step ──────────────────────────────────────────────────────
         <div className="space-y-4">
 
-          {/* Amount hero */}
           <div className="rounded-xl border border-border bg-card shadow-xs p-6 text-center space-y-1">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
-              You're sending
-            </p>
-            <p className="text-5xl font-bold tabular-nums text-foreground">
-              GHS {fmtAmount(formData.amount)}
-            </p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">You're sending</p>
+            <p className="text-5xl font-bold tabular-nums text-foreground">GHS {fmtAmount(formData.amount)}</p>
           </div>
 
-          {/* Transfer summary */}
           <div className="rounded-xl border border-border bg-card shadow-xs overflow-hidden">
             <div className="px-4 py-3 border-b border-border bg-surface-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Transfer summary
-              </p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Transfer summary</p>
             </div>
             <div className="divide-y divide-border/50">
               {[
@@ -576,7 +585,9 @@ export function SendMoneyScreen() {
                   label: 'Pay from',
                   value: formData.fundingSource === 'wallet'
                     ? `Wallet (GHS ${walletBalance.toFixed(2)})`
-                    : 'Card via Paystack',
+                    : formData.fundingSource.startsWith('card_')
+                    ? `Saved card ••••`
+                    : 'Paystack',
                 },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center justify-between px-4 py-3">
@@ -587,7 +598,6 @@ export function SendMoneyScreen() {
             </div>
           </div>
 
-          {/* Note for non-wallet */}
           {formData.fundingSource !== 'wallet' && (
             <p className="text-xs text-muted-foreground text-center px-4">
               A Paystack payment window will open to complete this transfer securely.
@@ -595,11 +605,7 @@ export function SendMoneyScreen() {
           )}
 
           <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={() => setStep('details')}
-              className="flex-1 border-border"
-            >
+            <Button variant="outline" onClick={() => setStep('details')} className="flex-1 border-border">
               Edit details
             </Button>
             <Button onClick={handleConfirm} className="flex-1 gap-2">

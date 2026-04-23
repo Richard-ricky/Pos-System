@@ -20,12 +20,12 @@ import {
 // ─── Nav link config ──────────────────────────────────────────────────────────
 
 const NAV_LINKS = [
-  { to: '/wallet',       label: 'Wallet',          icon: Wallet,       roles: null },
-  { to: '/pos',          label: 'POS',             icon: ShoppingCart, roles: null },
-  { to: '/products',     label: 'Products',        icon: Package,      roles: null },
-  { to: '/transactions', label: 'Transactions',    icon: Receipt,      roles: null },
-  { to: '/accounts',     label: 'Linked Accounts', icon: CreditCard,   roles: null },
-  { to: '/analytics',    label: 'Analytics',       icon: BarChart3,    roles: ['admin', 'manager'] },
+  { to: '/app/wallet',       label: 'Wallet',          icon: Wallet,       roles: null },
+  { to: '/app/pos',          label: 'POS',             icon: ShoppingCart, roles: null },
+  { to: '/app/products',     label: 'Products',        icon: Package,      roles: null },
+  { to: '/app/transactions', label: 'Transactions',    icon: Receipt,      roles: null },
+  { to: '/app/accounts',     label: 'Linked Accounts', icon: CreditCard,   roles: null },
+  { to: '/app/analytics',    label: 'Analytics',       icon: BarChart3,    roles: ['admin', 'manager'] },
 ] as const;
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -35,10 +35,8 @@ export function MainLayout() {
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
-  const isActive = (path: string) => {
-    if (path === '/wallet') return location.pathname === '/' || location.pathname === '/wallet';
-    return location.pathname.startsWith(path);
-  };
+  const isActive = (path: string) =>
+    location.pathname === path || location.pathname.startsWith(path + '/');
 
   const canAccess = (roles: readonly string[] | null) => {
     if (!roles) return true;
@@ -57,7 +55,7 @@ export function MainLayout() {
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
 
           {/* Brand */}
-          <Link to="/wallet" className="flex items-center gap-2.5 shrink-0">
+          <Link to="/app/wallet" className="flex items-center gap-2.5 shrink-0">
             <div className="size-9 rounded-xl bg-primary flex items-center justify-center shadow-sm">
               <Wallet className="size-4 text-primary-foreground" />
             </div>
@@ -70,14 +68,14 @@ export function MainLayout() {
           {/* Actions */}
           <div className="flex items-center gap-2">
             <Button asChild size="sm" className="gap-1.5 hidden sm:flex">
-              <Link to="/add-money">
+              <Link to="/app/add-money">
                 <PlusCircle className="size-3.5" />
                 Add Money
               </Link>
             </Button>
 
             <Button asChild size="sm" variant="outline" className="gap-1.5 border-border hidden sm:flex">
-              <Link to="/send-money">
+              <Link to="/app/send-money">
                 <Send className="size-3.5" />
                 Send
               </Link>
@@ -85,10 +83,10 @@ export function MainLayout() {
 
             {/* Mobile: icon-only */}
             <Button asChild size="icon" variant="ghost" className="sm:hidden">
-              <Link to="/add-money"><PlusCircle className="size-4" /></Link>
+              <Link to="/app/add-money"><PlusCircle className="size-4" /></Link>
             </Button>
             <Button asChild size="icon" variant="ghost" className="sm:hidden">
-              <Link to="/send-money"><Send className="size-4" /></Link>
+              <Link to="/app/send-money"><Send className="size-4" /></Link>
             </Button>
 
             <NotificationCenter />
@@ -109,7 +107,6 @@ export function MainLayout() {
 
               <DropdownMenuContent align="end" className="w-56">
 
-                {/* User info */}
                 <DropdownMenuLabel className="pb-2">
                   <p className="text-sm font-medium text-foreground leading-none">{user?.name}</p>
                   <p className="text-xs text-muted-foreground truncate mt-1">{user?.email}</p>
@@ -119,10 +116,7 @@ export function MainLayout() {
 
                 {/* Theme toggle */}
                 <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    toggleTheme();
-                  }}
+                  onSelect={(e) => { e.preventDefault(); toggleTheme(); }}
                   className="cursor-pointer gap-2"
                 >
                   {theme === 'dark' ? (
