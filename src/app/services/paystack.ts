@@ -3,7 +3,7 @@ import { verifyPayment, fundWallet, initializePayment as apiInitializePayment } 
 
 interface PaymentData {
   email: string;
-  amount: number; // Amount in GHS (will be converted to pesewas internally)
+  amount: number;
   currency?: string;
   ref?: string;
   metadata?: Record<string, unknown>;
@@ -22,15 +22,12 @@ class PaystackService {
     this.loadPaystackScript();
   }
 
-  // ─── Load Paystack inline script ───────────────────────────────────────────
-
   private loadPaystackScript(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (this.isScriptLoaded) { resolve(); return; }
       if (document.getElementById('paystack-script')) {
         this.isScriptLoaded = true; resolve(); return;
       }
-
       const script = document.createElement('script');
       script.id = 'paystack-script';
       script.src = 'https://js.paystack.co/v1/inline.js';
@@ -41,8 +38,6 @@ class PaystackService {
     });
   }
 
-  // ─── Open Paystack popup ────────────────────────────────────────────────────
-
   async initializePayment(data: PaymentData): Promise<void> {
     try {
       await this.loadPaystackScript();
@@ -51,28 +46,34 @@ class PaystackService {
       const handler = (window as any).PaystackPop.setup({
         key: this.publicKey,
         email: data.email,
-        amount: Math.round(data.amount * 100), // GHS → pesewas
+        amount: Math.round(data.amount * 100),
         currency: data.currency || 'GHS',
         ref: data.ref || this.generateReference(),
         metadata: data.metadata || {},
         channels: data.channels || ['card', 'mobile_money', 'bank', 'ussd'],
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         callback: (response: any) => {
+          document.body.style.pointerEvents = ''; // restore after payment
           data.onSuccess(response.reference);
         },
         onClose: () => {
+          document.body.style.pointerEvents = ''; // restore on close
           data.onClose?.();
         },
       });
 
-      handler.openIframe();
+      // ✅ Force restore pointer-events that Radix Dialog locks on body,
+      // then open Paystack after a frame so Radix has fully cleaned up
+      setTimeout(() => {
+        document.body.style.pointerEvents = 'auto';
+        handler.openIframe();
+      }, 300);
+
     } catch (error) {
       console.error('Paystack initialization error:', error);
       data.onError(error);
     }
   }
-
-  // ─── Verify payment via your backend (real verification) ───────────────────
 
   async verifyPayment(reference: string): Promise<{
     verified: boolean;
@@ -83,15 +84,11 @@ class PaystackService {
     paidAt: string;
   }> {
     const result = await verifyPayment(reference);
-
     if (!result.verified || result.status !== 'success') {
       throw new Error(`Payment verification failed: ${result.status}`);
     }
-
     return result;
   }
-
-  // ─── Fund wallet: popup → verify → credit wallet ───────────────────────────
 
   async fundWallet(
     amount: number,
@@ -118,8 +115,6 @@ class PaystackService {
     });
   }
 
-  // ─── Process a POS card payment ────────────────────────────────────────────
-
   async processCardPayment(
     amount: number,
     email: string,
@@ -144,8 +139,6 @@ class PaystackService {
       });
     });
   }
-
-  // ─── Process a mobile money payment ────────────────────────────────────────
 
   async processMobileMoneyPayment(
     amount: number,
@@ -179,8 +172,6 @@ class PaystackService {
     });
   }
 
-  // ─── Helpers ───────────────────────────────────────────────────────────────
-
   private generateReference(): string {
     return `POS-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
   }
@@ -206,6 +197,5 @@ class PaystackService {
   }
 }
 
-// ─── Re-export api initializer if needed elsewhere ─────────────────────────
 export { apiInitializePayment };
 export const paystackService = new PaystackService();
